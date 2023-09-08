@@ -28,8 +28,7 @@ interface OldItem extends Item {
 
 if (!confirm("WARNING: The database will be migrated. Continue?")) Deno.exit();
 
-const iter1 = kv.list<OldItem>({ prefix: ["items"] });
-for await (const oldItemEntry of iter1) {
+async function migrate(oldItemEntry: Deno.KvEntry<OldItem>) {
   if (oldItemEntry.value.createdAt) {
     const newItem = {
       id: ulid(new Date(oldItemEntry.value.createdAt).getTime()),
@@ -60,6 +59,13 @@ for await (const oldItemEntry of iter1) {
     await kv.delete(oldItemEntry.key);
   }
 }
+
+const promises1 = [];
+const iter1 = kv.list<OldItem>({ prefix: ["items"] });
+for await (const oldItemEntry of iter1) {
+  promises1.push(migrate(oldItemEntry));
+}
+await Promise.all(promises1);
 
 const iter3 = kv.list<OldItem>({ prefix: ["items_by_user"] });
 const promises = [];
