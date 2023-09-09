@@ -1,9 +1,40 @@
 // Copyright 2023 the Deno authors. All rights reserved. MIT license.
-import type { PageProps } from "$fresh/server.ts";
+import type { Handlers, PageProps } from "$fresh/server.ts";
 import { HEADING_STYLES, INPUT_STYLES } from "@/utils/constants.ts";
 import Head from "@/components/Head.tsx";
 import IconCheckCircle from "tabler_icons_tsx/circle-check.tsx";
 import IconCircleX from "tabler_icons_tsx/circle-x.tsx";
+import { redirect } from "@/utils/http.ts";
+import { createItem, type Item } from "@/utils/db.ts";
+import { assertSignedIn, State } from "@/middleware/session.ts";
+import { ulid } from "std/ulid/mod.ts";
+import { ComponentChildren } from "preact";
+
+export const handler: Handlers<undefined, State> = {
+  async POST(req, ctx) {
+    assertSignedIn(ctx);
+
+    const form = await req.formData();
+    const title = form.get("title");
+    const url = form.get("url");
+    if (typeof title !== "string" || title === "") {
+      return redirect("/submit?error");
+    }
+    if (typeof url !== "string" || !URL.canParse(url)) {
+      return redirect("/submit?error");
+    }
+
+    const item: Item = {
+      id: ulid(),
+      userLogin: ctx.state.sessionUser.login,
+      title,
+      url,
+      score: 0,
+    };
+    await createItem(item);
+    return redirect("/items/" + item.id);
+  },
+};
 
 export default function SubmitPage(props: PageProps) {
   return (
@@ -45,31 +76,37 @@ export default function SubmitPage(props: PageProps) {
             method="post"
             action="/api/items"
           >
+            {props.url.searchParams.has("error") && (
+              <div class="text-red-500 text-sm rounded-full px-4 py-2 text-center">
+                Title and valid URL are required
+              </div>
+            )}
             <div class="mt-4">
               <label
-                htmlFor="submit_title"
+                htmlFor="title"
                 class="block text-sm font-medium leading-6 text-gray-900"
               >
                 Title
               </label>
               <input
-                id="submit_title"
+                id="title"
                 class={`${INPUT_STYLES} w-full mt-2`}
                 type="text"
                 name="title"
-                required
+                // required
                 placeholder="Deno Hunt: the best place to share your Deno project"
               />
             </div>
 
             <div class="mt-4">
               <label
-                htmlFor="submit_title"
+                htmlFor="url"
                 class="block text-sm font-medium leading-6 text-gray-900"
               >
                 URL
               </label>
               <input
+                id="url"
                 class={`${INPUT_STYLES} w-full mt-2`}
                 type="url"
                 name="url"

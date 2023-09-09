@@ -44,6 +44,12 @@ function assertResponseJson(resp: Response) {
   assertEquals(resp.headers.get("content-type"), "application/json");
 }
 
+function genSessionHeader(sessionId: string) {
+  return {
+    cookie: "site-session=" + sessionId,
+  };
+}
+
 Deno.test("[e2e] GET /", async () => {
   const resp = await handler(new Request("http://localhost"));
 
@@ -246,14 +252,92 @@ Deno.test("[e2e] GET /api/items/[id]/comments", async () => {
   assertEquals(values, [JSON.parse(JSON.stringify(comment))]);
 });
 
-Deno.test("[e2e] POST /api/items", async () => {
-  const resp = await handler(
-    new Request("http://localhost/api/items", { method: "POST" }),
-  );
+Deno.test("[e2e] POST /submit", async (test) => {
+  const url = "http://localhost/submit";
 
-  assertFalse(resp.ok);
-  assertEquals(await resp.text(), "User must be signed in");
-  assertEquals(resp.status, Status.Unauthorized);
+  await test.step("fails if the user is not signed in", async () => {
+    const resp = await handler(new Request(url, { method: "POST" }));
+
+    assertFalse(resp.ok);
+    assertEquals(resp.headers.get("location"), "/signin");
+    assertEquals(resp.status, Status.SeeOther);
+  });
+
+  await test.step("fails if title is missing", async () => {
+    const sessionUser = genNewUser();
+    await createUser(sessionUser);
+    const body = new FormData();
+    const resp = await handler(
+      new Request(url, {
+        method: "POST",
+        body,
+        headers: genSessionHeader(sessionUser.sessionId),
+      }),
+    );
+
+    assertFalse(resp.ok);
+    assertEquals(resp.headers.get("location"), "/submit?error");
+    assertEquals(resp.status, Status.SeeOther);
+  });
+
+  await test.step("fails if url is missing", async () => {
+    const sessionUser = genNewUser();
+    await createUser(sessionUser);
+    const body = new FormData();
+    body.set("title", "Title");
+    const resp = await handler(
+      new Request(url, {
+        method: "POST",
+        body,
+        headers: genSessionHeader(sessionUser.sessionId),
+      }),
+    );
+
+    assertFalse(resp.ok);
+    assertEquals(resp.headers.get("location"), "/submit?error");
+    assertEquals(resp.status, Status.SeeOther);
+  });
+
+  await test.step("fails if url is invalid", async () => {
+    const sessionUser = genNewUser();
+    await createUser(sessionUser);
+    const body = new FormData();
+    body.set("title", "Title");
+    body.set("url", "hello-there");
+    const resp = await handler(
+      new Request(url, {
+        method: "POST",
+        body,
+        headers: genSessionHeader(sessionUser.sessionId),
+      }),
+    );
+
+    assertFalse(resp.ok);
+    assertEquals(resp.headers.get("location"), "/submit?error");
+    assertEquals(resp.status, Status.SeeOther);
+  });
+
+  await test.step("returns created item", async () => {
+    const sessionUser = genNewUser();
+    await createUser(sessionUser);
+    const title = crypto.randomUUID();
+    const bodyUrl = "http://example.com";
+    const body = new FormData();
+    body.set("title", title);
+    body.set("url", bodyUrl);
+
+    const resp = await handler(
+      new Request(url, {
+        method: "POST",
+        body,
+        headers: genSessionHeader(sessionUser.sessionId),
+      }),
+    );
+
+    assert(resp.ok);
+    assert(resp.headers.has("location"));
+    assertEquals(resp.status, Status.SeeOther);
+  });
 });
 
 Deno.test("[e2e] GET /api/users", async () => {
